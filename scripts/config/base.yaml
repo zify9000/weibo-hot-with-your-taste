@@ -1,0 +1,20 @@
+llm:
+  max_tokens: 131072
+  timeout: 300
+  temperature: 0.1
+
+feishu:
+  retry_times: 3
+  retry_delay: 10
+
+push:
+  dedup_days: 3              # 重复话题判定周期（天），在该天数内已推送的话题视为重复
+
+enrich:
+  short_topic_max_len: 5     # 短话题名阈值（字数），≤此值直接走搜索，跳过LLM判断
+  max_summary_len: 50        # 摘要最大字数
+  top_weibo_count: 20        # 取热度最高的N条微博
+
+fit_taste:
+  min_feedback_count: 5      # 触发偏好优化的最小反馈条数
+  min_new_categories: 3      # 触发偏好优化的最小新分类数

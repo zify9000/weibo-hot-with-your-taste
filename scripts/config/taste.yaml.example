@@ -1,0 +1,28 @@
+# ── 偏好配置文件 ──
+# 复制为 taste.yaml 后按需修改，或通过初始化脚本 / fit_taste 自动生成
+#
+# 七项配置说明：
+#   domain_keywords       - 领域关键词，用户关注的核心领域
+#   liked_categories      - 感兴趣的分类（LLM 语义匹配，可手动调整）
+#   disliked_categories   - 不感兴趣的分类（参与规则过滤和 LLM 判断）
+#   recall_keywords       - 召回关键词，被排除分类中的话题若包含这些词则救回
+#   yes_criteria          - LLM 推送判断标准（自然语言，描述什么话题值得推）
+#   no_criteria           - LLM 不推送判断标准（自然语言，描述什么话题应跳过）
+#   info_check_criteria   - 信息完整性判断标准（话题对但摘要不足时触发）
+
+# 领域关键词：用户关注的核心领域
+domain_keywords: []
+
+# 感兴趣的分类：初始化时 LLM 语义匹配得出
+liked_categories: []
+
+# 不感兴趣的分类：初始化时 LLM 语义匹配得出，同时用于规则过滤和 LLM 判断
+disliked_categories: []
+
+# 召回关键词：被排除分类中的话题，若包含这些关键词则救回
+recall_keywords: []
+
+# LLM 判断标准：推送/不推送/信息不足的规则描述
+yes_criteria: ""
+no_criteria: ""
+info_check_criteria: ""

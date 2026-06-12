@@ -1,0 +1,30 @@
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# ── 敏感凭据（.example 模板保留） ──
+scripts/env/.feishu.env
+scripts/env/.llm.env
+scripts/env/.weibo.env
+
+# ── 用户偏好配置（.example 模板保留） ──
+scripts/config/taste.yaml
+
+# ── 运行时数据 & 日志 ──
+scripts/data/*.jsonl
+scripts/log/
+scripts/tmp/
+
+# ── 配置备份 ──
+scripts/config/*.bak
+scripts/config/*.yaml.bak
+
+# ── 设计文档 ──
+docs/
+
+# ── IDE ──
+.vscode/
