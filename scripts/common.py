@@ -7,6 +7,8 @@ import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import requests
+
 os.environ["TZ"] = "Asia/Shanghai"
 time_module.tzset()
 
@@ -29,6 +31,13 @@ FETCH_TOPICS_PATH = TMP_DIR / "fetch_topics.jsonl"
 # 以下路径已废弃，保留向后兼容
 CACHED_TOPICS_PATH = DATA_DIR / "cached_topics.jsonl"
 INIT_LOG_PATH = LOG_DIR / "init.log"
+
+# Cookie 过期标记文件：fetch.py 写入，notify_cookie_expired.py / weibo_wait_login.py 读写
+# 放 /tmp 是因为该信号短时有效，重启清空不影响正确性（下次 fetch 重新检测写入）
+COOKIE_STATUS_PATH = Path("/tmp/weibo_cookie_status.json")
+
+# common 模块自身日志器（clear_cookie_status 等函数使用）
+logger = logging.getLogger("common")
 
 
 def setup_logging(name: str) -> logging.Logger:
@@ -268,3 +277,42 @@ def format_hotness(raw_hot) -> str:
 
 def clean_word(w: str) -> str:
     return w.strip("#") if w else ""
+
+
+# ── 飞书 / Cookie 状态 公共辅助 ──
+
+@retry(times=3, delay=2, backoff=2, logger=logger)
+def get_feishu_token(app_id: str, app_secret: str) -> str:
+    """获取飞书 tenant_access_token（供 push.py / notify_cookie_expired.py 共用）
+
+    使用 requests 而非 curl_cffi：飞书开放平台 API 无反爬需求，保持依赖最小。
+    """
+    resp = requests.post(
+        "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+        json={"app_id": app_id, "app_secret": app_secret},
+        timeout=10,
+    )
+    result = resp.json()
+    if result.get("code") != 0:
+        raise Exception(f"获取飞书 token 失败: code={result.get('code')} msg={result.get('msg')}")
+    return result["tenant_access_token"]
+
+
+def read_cookie_status() -> dict | None:
+    """读取 Cookie 状态标记文件，不存在或解析失败返回 None"""
+    if not COOKIE_STATUS_PATH.exists():
+        return None
+    try:
+        return _json.loads(COOKIE_STATUS_PATH.read_text(encoding="utf-8"))
+    except (_json.JSONDecodeError, OSError) as e:
+        logger.warning(f"读取 Cookie 状态文件失败: {e}")
+        return None
+
+
+def clear_cookie_status():
+    """清除 Cookie 过期标记文件（登录成功后调用，失败不抛异常仅记日志）"""
+    try:
+        COOKIE_STATUS_PATH.unlink(missing_ok=True)
+        logger.info("已清除 Cookie 过期标记文件")
+    except OSError as e:
+        logger.warning(f"清除 Cookie 状态文件失败: {e}")

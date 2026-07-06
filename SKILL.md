@@ -25,6 +25,7 @@ weibo-hot-with-your-taste/
 │   ├── survey.py             # 调研用户偏好：LLM 从未推送话题中召回候选，记录用户对候选话题的意见
 │   ├── feedback.py           # 反馈推送质量：将用户对推送质量的反馈写入 tasted_topics.jsonl，收到"信息不全"反馈时触发二次搜索
 │   ├── fit_taste.py          # 偏好特征自适应优化：根据反馈和分类变化，LLM 全面优化 taste.yaml 全部七项配置
+│   ├── notify_cookie_expired.py  # Cookie 过期自动通知：生成二维码 → 上传飞书 → 推送图片消息（6小时节流）
 │   ├── init/
 │   │   ├── taste.py        # 偏好初始化：配置领域关键词→配置喜欢/不喜欢的话题类型→配置召回关键词→偏好访谈→生成特征规则
 │   │   ├── llm_feishu.py      # LLM/飞书凭据配置：写入 .llm.env / .feishu.env
@@ -269,33 +270,47 @@ push.py:   读 meta + topics → 按 word 去重 → (多次抓取/有failed) LL
 
 **手动触发**：agent 执行 `python3 scripts/fit_taste.py`，完成后读取日志中的变更摘要告知用户。
 
-### 5. Cookie 过期重新配置
+### 5. Cookie 过期自动恢复（定时任务）
 
 **症状**：
 - 推送卡片中所有话题都没有摘要（扩展信息），日志中大量 `未获取到话题详情` 或 `疑似 Cookie 已过期`
-- 标记文件 `/tmp/weibo_cookie_status.json` 内容为 `{"status": "expired"}`
+- 标记文件 `/tmp/weibo_cookie_status.json` 内容为 `{"status": "expired", "detected_at": "...", "notified_at": "..."}`
 - `fetch_topic_detail` 报错：`获取话题详情失败（疑似 Cookie 已过期，API 返回登录页面）`
 
 **根因**：`.weibo.env` 中的 Cookie（`SUB` 字段）已失效，m.weibo.cn 将请求重定向到登录页面，`resp.json()` 解析 HTML 时报错。
 
-**恢复流程（agent 必须按此执行）**：
+**自动恢复流程**：定时 fetch 检测到 Cookie 过期后，自动通过飞书推送 QR 二维码图片；用户扫码后通过与 agent 交互完成登录闭环。
 
+**Cron 包装模板**（no_agent 模式定时执行）：
+
+```sh
+#!/bin/bash
+cd <skill_root>
+python3 scripts/fetch.py
+if [ -f /tmp/weibo_cookie_status.json ]; then
+  python3 scripts/notify_cookie_expired.py
+fi
 ```
-# 步骤1：获取二维码
-python3 scripts/init/weibo_get_qr.py
 
-# agent 读取 /tmp/weibo_login_qr.png 展示给用户扫码
+`notify_cookie_expired.py` 会：读取标记文件 → 节流检查（6 小时间隔）→ 调用 `weibo_get_qr.py` 生成二维码 → 上传飞书 → 推送图片消息到 chat_id → 更新 `notified_at`。QR 生成失败时发送飞书文本告警兜底。
 
-# 步骤2：等待扫码并保存 Cookie
-python3 scripts/init/weibo_wait_login.py
-```
+**Agent 触发词与流程**：
+
+| 用户输入 | Agent 动作 |
+|---|---|
+| 「已扫码」/「扫码完成」 | 执行 `python3 scripts/init/weibo_wait_login.py`<br>• 成功 → 回复「Cookie 已刷新，下次 fetch 将恢复摘要补充」<br>• 失败（超时/Chrome 已关闭）→ 回复「会话已失效，请回复'重登微博'刷新二维码」 |
+| 「重登微博」/「刷新二维码」 | 执行 `python3 scripts/notify_cookie_expired.py`（重新生成并推送 QR） |
+
+**Agent 主动检测**（任意用户交互开始时）：
+1. 读取 `/tmp/weibo_cookie_status.json`
+2. 若存在且 `status=expired` → 主动提示：「检测到微博 Cookie 已过期，请回复'已扫码'完成登录，或回复'重登微博'刷新二维码」
+
+**说明**：
+- 定时 fetch 中检测到过期 → 自动推送 QR 到飞书（无需 agent 参与）
+- 用户扫码后需主动告诉 agent「已扫码」（异步触发 wait_login，wait_login 成功后会清除过期标记）
+- 若用户错过 QR（超过 6 小时未扫码），下次 cron fetch + notify 会重发 QR
 
 > ⚠️ **禁止告诉用户手动从浏览器复制 Cookie。** 必须使用上述 QR 码登录流程——headless Chromium 打开微博登录页获取二维码 → 用户 App 扫码 → nodriver 自动提取 Cookie 写入 `.weibo.env`。
-
-**主动检测**（agent 排查用）：
-1. 读取最近一次 fetch 日志：`tail -50 scripts/log/fetch_*.log | grep -E "Cookie|过期|详情获取"`
-2. 检查标记文件：`cat /tmp/weibo_cookie_status.json`（存在且 `status=expired` 即确认过期）
-3. 确认后主动提醒用户并执行上述恢复流程
 
 
 

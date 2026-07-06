@@ -12,7 +12,7 @@ from common import (
     SCRIPT_DIR, DATA_DIR,
     FETCH_META_PATH, FETCH_TOPICS_PATH, PUSHED_TOPICS_PATH,
     setup_logging, load_base_config, load_llm_env, load_feishu_env, load_prompt, load_topics_for_taste_judge_prompt,
-    get_llm_creds, get_feishu_creds, retry,
+    get_llm_creds, get_feishu_creds, get_feishu_token, retry,
 )
 
 logger = setup_logging("push")
@@ -452,20 +452,6 @@ def call_llm_second_filter(topic_items: list, llm_model="", base_url="", api_key
 
 # ── 飞书 ──
 
-@retry(times=3, delay=2, backoff=2, logger=logger)
-def _get_feishu_token(app_id: str, app_secret: str) -> str:
-    """获取飞书 tenant_access_token"""
-    resp = _http_sess.post(
-        "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
-        json={"app_id": app_id, "app_secret": app_secret},
-        timeout=10,
-    )
-    result = resp.json()
-    if result.get("code") != 0:
-        raise Exception(f"获取飞书 token 失败: code={result.get('code')} msg={result.get('msg')}")
-    return result["tenant_access_token"]
-
-
 def _send_feishu_message(token: str, chat_id: str, payload: dict):
     url = "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
@@ -595,7 +581,7 @@ def _build_feishu_card(date_str: str, new_topics: list, duplicate_topics: list, 
 
 def send_push_card(date_str: str, new_topics: list, duplicate_topics: list, app_id: str, app_secret: str, chat_id: str, show_hint: bool = True, dedup_days: int = 3):
     """发送飞书卡片消息"""
-    token = _get_feishu_token(app_id, app_secret)
+    token = get_feishu_token(app_id, app_secret)
     card = _build_feishu_card(date_str, new_topics, duplicate_topics, show_hint, dedup_days)
 
     payload = {
@@ -714,7 +700,7 @@ def main():
 
     if not new_topics and duplicate_topics:
         logger.info("本次推送候选全部为今日已推送热点，发送文本通知")
-        token = _get_feishu_token(app_id, app_secret)
+        token = get_feishu_token(app_id, app_secret)
         _send_feishu_text(token, chat_id, "当前时段无新增微博热点")
         append_pushed_topics(duplicate_topics, len(cached))
         clear_cached_data()

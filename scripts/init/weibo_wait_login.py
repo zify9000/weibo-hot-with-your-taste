@@ -18,7 +18,7 @@ from pathlib import Path
 _SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(_SCRIPT_DIR.parent))
 
-from common import SCRIPT_DIR, setup_logging
+from common import SCRIPT_DIR, setup_logging, clear_cookie_status
 
 logger = setup_logging("weibo_wait_login")
 WEIBO_ENV_PATH = SCRIPT_DIR / "env" / ".weibo.env"
@@ -131,6 +131,9 @@ def main():
         sys.exit(1)
 
     _save(cookie_dict)
+    # 登录成功后清除过期标记，下次 fetch 将重新检测并允许重新写入标记文件
+    clear_cookie_status()
+    logger.info("Cookie 过期标记已清除，重登流程完成")
     print(json.dumps({
         "action": "login_success",
         "message": f"登录成功，已保存 {len(cookie_dict)} 个 Cookie",

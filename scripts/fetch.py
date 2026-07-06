@@ -12,9 +12,9 @@ import requests as req
 from common import (
     SCRIPT_DIR, DATA_DIR,
     ALL_TOPICS_PATH, RULE_FILTERED_TOPICS_PATH, CATEGORY_STORE_PATH,
-    FETCH_META_PATH, FETCH_TOPICS_PATH,
+    FETCH_META_PATH, FETCH_TOPICS_PATH, COOKIE_STATUS_PATH,
     setup_logging, load_base_config, load_llm_env, load_weibo_env, load_rule_config, load_topics_for_taste_judge_prompt, load_prompt,
-    get_llm_creds, validate_llm_creds, get_weibo_cookies, format_hotness, clean_word,
+    get_llm_creds, validate_llm_creds, get_weibo_cookies, format_hotness, clean_word, read_cookie_status,
 )
 
 logger = setup_logging("fetch")
@@ -159,15 +159,23 @@ def fetch_topic_detail(word: str, cookies: dict) -> list:
         return []
 
 
-COOKIE_STATUS_PATH = Path("/tmp/weibo_cookie_status.json")
-
-
 def _write_cookie_status(status: str):
-    """写入 Cookie 状态标记文件，供 cron wrapper 或 agent 检测"""
+    """写入 Cookie 状态标记文件（幂等：已存在 expired 标记则不覆盖，保留 notified_at 供节流使用）
+
+    为什么幂等：cron 每小时跑一次 fetch，若每次覆盖标记文件会把 notify_cookie_expired.py
+    写入的 notified_at 重置为 null，导致节流失效。仅在 weibo_wait_login.py 清除标记后才允许重新写入。
+    """
+    existing = read_cookie_status()
+    if existing and existing.get("status") == "expired":
+        logger.debug("Cookie 过期标记已存在，跳过重复写入")
+        return
+    data = {
+        "status": status,
+        "detected_at": datetime.now().isoformat(),
+        "notified_at": None,  # 由 notify_cookie_expired.py 填写
+    }
     try:
-        COOKIE_STATUS_PATH.write_text(
-            json.dumps({"status": status, "checked_at": datetime.now().isoformat()}, ensure_ascii=False)
-        )
+        COOKIE_STATUS_PATH.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     except OSError as e:
         logger.warning(f"写入 Cookie 状态文件失败: {e}")
 
